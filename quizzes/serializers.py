@@ -70,6 +70,12 @@ class AttemptCreateSerializer(serializers.ModelSerializer):
         return Attempt.objects.create(user=user, **validated_data)
 
 
+class AttemptListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Attempt
+        fields = ["id", "quiz", "score", "is_submitted"]
+
+
 class AnswerSubmitSerializer(serializers.Serializer):
     """
     Сериализатор "ручного" формата для отправки ответов.

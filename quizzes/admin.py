@@ -31,6 +31,5 @@ class OptionAdmin(admin.ModelAdmin):
     search_fields = ("text",)
 
 
-admin.site.register(Option)
 admin.site.register(Attempt)
 admin.site.register(Answer)
