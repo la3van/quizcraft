@@ -1,0 +1,66 @@
+from django.conf import settings
+from django.conf.urls.static import static
+from django.urls import path
+
+from .views import (
+    AttemptDetailView,
+    AttemptListCreateView,
+    AttemptSubmitView,
+    BankQuestionDetailView,
+    BankQuestionListCreateView,
+    ChangePasswordView,
+    LoginView,
+    PasswordResetConfirmView,
+    PasswordResetRequestView,
+    LogoutView,
+    ProfileStatsView,
+    ProfileView,
+    QuestionTopicDetailView,
+    QuestionTopicListCreateView,
+    BankQuestionExportView,
+    BankQuestionImportView,
+    BankQuestionMediaUploadView,
+    QuizAnalyticsExportView,
+    QuizAnalyticsView,
+    QuizAttachmentDeleteView,
+    QuizAttachmentListCreateView,
+    QuizByCodeView,
+    QuizDetailView,
+    QuizEditDataView,
+    QuizListCreateView,
+    RegisterView,
+    me_view,
+)
+
+urlpatterns = [
+    path("me/", me_view, name="me"),
+    path("login/", LoginView.as_view(), name="api-login"),
+    path("register/", RegisterView.as_view(), name="api-register"),
+    path("logout/", LogoutView.as_view(), name="api-logout"),
+    path("password-reset/", PasswordResetRequestView.as_view(), name="api-password-reset"),
+    path("password-reset/confirm/", PasswordResetConfirmView.as_view(), name="api-password-reset-confirm"),
+    path("profile/", ProfileView.as_view(), name="api-profile"),
+    path("profile/password/", ChangePasswordView.as_view(), name="api-change-password"),
+    path("profile/stats/", ProfileStatsView.as_view(), name="api-profile-stats"),
+    path("topics/", QuestionTopicListCreateView.as_view(), name="topic-list-create"),
+    path("topics/<int:pk>/", QuestionTopicDetailView.as_view(), name="topic-detail"),
+    path("questions/", BankQuestionListCreateView.as_view(), name="bank-question-list-create"),
+    path("questions/import/", BankQuestionImportView.as_view(), name="bank-question-import"),
+    path("questions/export/", BankQuestionExportView.as_view(), name="bank-question-export"),
+    path("questions/<int:pk>/", BankQuestionDetailView.as_view(), name="bank-question-detail"),
+    path("questions/<int:pk>/media/", BankQuestionMediaUploadView.as_view(), name="bank-question-media"),
+    path("quizzes/", QuizListCreateView.as_view(), name="quiz-list"),
+    path("quizzes/by-code/<str:code>/", QuizByCodeView.as_view(), name="quiz-by-code"),
+    path("quizzes/<int:pk>/", QuizDetailView.as_view(), name="quiz-detail"),
+    path("quizzes/<int:pk>/edit-data/", QuizEditDataView.as_view(), name="quiz-edit-data"),
+    path("quizzes/<int:pk>/analytics/", QuizAnalyticsView.as_view(), name="quiz-analytics"),
+    path("quizzes/<int:pk>/analytics/export/", QuizAnalyticsExportView.as_view(), name="quiz-analytics-export"),
+    path("quizzes/<int:pk>/attachments/", QuizAttachmentListCreateView.as_view(), name="quiz-attachments"),
+    path("quizzes/<int:pk>/attachments/<int:attachment_id>/", QuizAttachmentDeleteView.as_view(), name="quiz-attachment-delete"),
+    path("attempts/", AttemptListCreateView.as_view(), name="attempt-list-create"),
+    path("attempts/<int:pk>/", AttemptDetailView.as_view(), name="attempt-detail"),
+    path("attempts/<int:pk>/submit/", AttemptSubmitView.as_view(), name="attempt-submit"),
+]
+
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

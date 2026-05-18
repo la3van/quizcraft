@@ -1,0 +1,6 @@
+﻿text,type,points,topic,tags,learning_goal,explanation,correct_text,correct_number,numeric_tolerance,media_url,options,correct_options
+Сколько будет 10 / 2?,choice_single,1,Математика,"арифметика, деление",Проверить деление простых чисел,10 / 2 = 5.,,,,,4|5|6|10,2
+Какие технологии относятся к frontend-разработке?,choice_multi,2,Информатика,"frontend, web",Отличать frontend-технологии от backend-инструментов,"HTML, CSS и React используются на стороне интерфейса пользователя.",,,,,HTML|CSS|React|PostgreSQL,1|2|3
+CSS отвечает за внешний вид страницы.,tf,1,Информатика,"css, frontend",Понимать роль CSS,"CSS задаёт стили: цвета, размеры, отступы и расположение элементов.",,,,,Верно|Неверно,1
+Какой командой обычно запускают Docker Compose?,input_text,1,Информатика,"docker, devops",Знать базовую команду запуска проекта,Команда docker compose up поднимает сервисы из docker-compose.yml.,docker compose up,,,,,
+Сколько байт в одном килобайте в классическом двоичном понимании?,input_number,1,Информатика,единицы измерения,Понимать единицы измерения информации,В двоичной системе 1 КБ часто считают как 1024 байта.,,1024,0,,,

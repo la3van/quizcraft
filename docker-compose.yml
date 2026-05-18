@@ -1,0 +1,65 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: quizcraft_db
+    environment:
+      POSTGRES_USER: quizcraft_user
+      POSTGRES_PASSWORD: quizcraft_pass
+      POSTGRES_DB: quizcraft_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quizcraft_user -d quizcraft_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - quizcraft_network
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: quizcraft_backend
+    volumes:
+      - ./:/app:cached
+      - /app/__pycache__
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DJANGO_SETTINGS_MODULE=backend.settings
+      - DATABASE_URL=postgresql://quizcraft_user:quizcraft_pass@db:5432/quizcraft_db
+    entrypoint: ["/bin/bash", "/app/backend/entrypoint.sh"]
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - quizcraft_network
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: quizcraft_frontend
+    volumes:
+      - ./frontend/src:/app/frontend/src:cached
+      - ./frontend/public:/app/frontend/public:cached
+      - /app/frontend/node_modules
+    ports:
+      - "5173:5173"
+    environment:
+      - BACKEND_URL=http://backend:8000
+    depends_on:
+      - backend
+    networks:
+      - quizcraft_network
+
+volumes:
+  postgres_data:
+
+networks:
+  quizcraft_network:
+    driver: bridge
