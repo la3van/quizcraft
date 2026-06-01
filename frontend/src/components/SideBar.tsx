@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
@@ -6,6 +7,47 @@ type Props = {
   open: boolean;
   onClose: () => void;
 };
+
+type MenuLinkProps = {
+  to: string;
+  children: string;
+  onClick: () => void;
+  primary?: boolean;
+};
+
+function MenuLink({ to, children, onClick, primary = false }: MenuLinkProps) {
+  return (
+    <Link
+      to={to}
+      onClick={onClick}
+      style={{
+        textDecoration: "none",
+        color: primary ? "white" : "#0F172A",
+        background: primary ? "#06B6D4" : "#F8FAFC",
+        border: primary ? "1px solid #06B6D4" : "1px solid #E6EEF6",
+        padding: "9px 12px",
+        borderRadius: 10,
+        display: "block",
+        fontWeight: 600,
+      }}
+    >
+      {children}
+    </Link>
+  );
+}
+
+function MenuSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <li style={{ display: "grid", gap: 8 }}>
+      <div style={{ color: "#64748B", fontSize: 13, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.5 }}>
+        {title}
+      </div>
+      <div style={{ display: "grid", gap: 8, paddingLeft: 10, borderLeft: "2px solid #E6EEF6" }}>
+        {children}
+      </div>
+    </li>
+  );
+}
 
 export default function SideBar({ open, onClose }: Props) {
   const { isLoggedIn } = useAuth();
@@ -50,66 +92,37 @@ export default function SideBar({ open, onClose }: Props) {
         aria-hidden={!open}
       >
         <nav>
-          <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 12 }}>
+          <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 16 }}>
             {isLoggedIn && (
               <>
-                <li>
-                  <Link to="/dashboard" onClick={onClose} style={{ textDecoration: "none", color: "#0F172A", fontWeight: 500 }}>
-                    Панель управления
-                  </Link>
-                </li>
-                <li>
-                  <Link to="/quizzes" onClick={onClose} style={{ textDecoration: "none", color: "#0F172A" }}>
-                    Все квизы
-                  </Link>
-                </li>
-                <li>
-                  <Link to="/quizzes?owner=me" onClick={onClose} style={{ textDecoration: "none", color: "#0F172A" }}>
-                    Мои квизы
-                  </Link>
-                </li>
-                <li>
-                  <Link to="/questions" onClick={onClose} style={{ textDecoration: "none", color: "#0F172A" }}>
-                    Банк вопросов
-                  </Link>
-                </li>
-                <li>
-                  <Link to="/attempts" onClick={onClose} style={{ textDecoration: "none", color: "#0F172A" }}>
-                    Мои попытки
-                  </Link>
-                </li>
-                <li>
-                  <Link to="/join" onClick={onClose} style={{ textDecoration: "none", color: "#0F172A" }}>
-                    Войти по коду
-                  </Link>
-                </li>
-                <li style={{ borderTop: "1px solid #E6EEF6", paddingTop: 12, marginTop: 12 }}>
-                  <Link
-                    to="/quizzes/create"
-                    onClick={onClose}
-                    style={{ textDecoration: "none", color: "white", background: "#06B6D4", padding: "8px 12px", borderRadius: 8, display: "block", textAlign: "center", fontWeight: 600 }}
-                  >
-                    ✎ Создать квиз
-                  </Link>
-                </li>
+                <MenuSection title="Общее">
+                  <MenuLink to="/dashboard" onClick={onClose}>Панель управления</MenuLink>
+                  <MenuLink to="/join" onClick={onClose}>Войти по коду</MenuLink>
+                </MenuSection>
+
+                <MenuSection title="Банк вопросов">
+                  <MenuLink to="/questions" onClick={onClose}>Общий банк вопросов</MenuLink>
+                </MenuSection>
+
+                <MenuSection title="Квизы">
+                  <MenuLink to="/quizzes" onClick={onClose}>Квизы</MenuLink>
+                  <MenuLink to="/quiz-attempts" onClick={onClose}>Мои попытки по квизам</MenuLink>
+                  <MenuLink to="/quizzes/create" onClick={onClose} primary>✎ Создать квиз</MenuLink>
+                </MenuSection>
+
+                <MenuSection title="Викторины">
+                  <MenuLink to="/trivia" onClick={onClose}>Викторины</MenuLink>
+                  <MenuLink to="/trivia-attempts" onClick={onClose}>Мои попытки по викторинам</MenuLink>
+                  <MenuLink to="/trivia/create" onClick={onClose}>✎ Создать викторину</MenuLink>
+                </MenuSection>
               </>
             )}
             {!isLoggedIn && (
               <>
-                <li>
-                  <Link to="/" onClick={onClose} style={{ textDecoration: "none", color: "#0F172A", fontWeight: 500 }}>
-                    О проекте
-                  </Link>
-                </li>
-                <li style={{ borderTop: "1px solid #E6EEF6", paddingTop: 12, marginTop: 12 }}>
-                  <Link
-                    to="/login"
-                    onClick={onClose}
-                    style={{ textDecoration: "none", color: "white", background: "#2563EB", padding: "8px 12px", borderRadius: 8, display: "block", textAlign: "center", fontWeight: 600 }}
-                  >
-                    Войти
-                  </Link>
-                </li>
+                <MenuSection title="Навигация">
+                  <MenuLink to="/" onClick={onClose}>О проекте</MenuLink>
+                  <MenuLink to="/login" onClick={onClose} primary>Войти</MenuLink>
+                </MenuSection>
               </>
             )}
           </ul>

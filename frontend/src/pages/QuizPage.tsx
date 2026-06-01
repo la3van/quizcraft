@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { getQuiz } from "../api/quizzes";
-import { createAttempt, submitAttempt } from "../api/attempts";
+import { createAttempt, getAttempt, submitAttempt } from "../api/attempts";
 import type { QuizDetail, QuizQuestion, SubmitAnswer } from "../api/types";
 import QuestionCard from "../components/QuestionCard";
 import type { AnswerDraft } from "../components/QuestionCard";
@@ -26,6 +26,47 @@ function formatTime(totalSeconds: number | null) {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
+function getAttemptCode(id: number) {
+  return `ATT-${String(id).padStart(4, "0")}`;
+}
+
+function getDraftStorageKey(attemptId: number) {
+  return `quizcraft_attempt_draft_${attemptId}`;
+}
+
+function makeInitialAnswers(questions: QuizQuestion[]): AnswersMap {
+  const init: AnswersMap = {};
+  for (const question of questions) {
+    init[question.id] = { selected_options: [], text_answer: "", number_answer: "" };
+  }
+  return init;
+}
+
+function readDraftAnswers(attemptId: number, fallback: AnswersMap): AnswersMap {
+  try {
+    const raw = window.localStorage.getItem(getDraftStorageKey(attemptId));
+    if (!raw) return fallback;
+
+    const parsed = JSON.parse(raw) as Record<string, Partial<AnswerDraft>>;
+    const next: AnswersMap = { ...fallback };
+
+    for (const [questionIdText, value] of Object.entries(parsed)) {
+      const questionId = Number(questionIdText);
+      if (!Number.isFinite(questionId) || !next[questionId]) continue;
+
+      next[questionId] = {
+        selected_options: Array.isArray(value.selected_options) ? value.selected_options.filter((item) => Number.isFinite(item)) : [],
+        text_answer: typeof value.text_answer === "string" ? value.text_answer : "",
+        number_answer: typeof value.number_answer === "string" ? value.number_answer : "",
+      };
+    }
+
+    return next;
+  } catch {
+    return fallback;
+  }
+}
+
 function reorderQuestions(questions: QuizQuestion[], order: number[] | null, optionOrder: OptionOrderMap): QuizQuestion[] {
   const byId = new Map(questions.map((question) => [question.id, question]));
   const base = order && order.length > 0
@@ -45,8 +86,10 @@ function reorderQuestions(questions: QuizQuestion[], order: number[] | null, opt
 
 export default function QuizPage() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const quizId = Number(id);
+  const attemptFromUrl = Number(searchParams.get("attempt") || "");
 
   const [quiz, setQuiz] = useState<QuizDetail | null>(null);
   const [attemptId, setAttemptId] = useState<number | null>(null);
@@ -77,10 +120,32 @@ export default function QuizPage() {
         const data = await getQuiz(quizId);
         if (cancelled) return;
 
+        const initialAnswers = makeInitialAnswers(data.questions);
         setQuiz(data);
-        const init: AnswersMap = {};
-        for (const question of data.questions) init[question.id] = { selected_options: [], text_answer: "", number_answer: "" };
-        setAnswers(init);
+        setAnswers(initialAnswers);
+
+        if (Number.isFinite(attemptFromUrl) && attemptFromUrl > 0) {
+          const attempt = await getAttempt(attemptFromUrl);
+          if (cancelled) return;
+
+          if (attempt.quiz !== data.id) {
+            setErr("Эта попытка относится к другому квизу или викторине.");
+            return;
+          }
+
+          if (attempt.is_submitted) {
+            navigate(`/attempts/${attempt.id}/result`, { replace: true });
+            return;
+          }
+
+          setAttemptId(attempt.id);
+          setQuestionOrder(attempt.question_order ?? null);
+          setOptionOrder(attempt.option_order ?? {});
+          setDeadlineAt(attempt.deadline_at);
+          setRemainingSeconds(attempt.remaining_seconds);
+          setAnswers(readDraftAnswers(attempt.id, initialAnswers));
+          setAutoSubmitted(false);
+        }
       } catch (e) {
         if (!cancelled) setErr(e instanceof Error ? e.message : "Не удалось загрузить квиз.");
       }
@@ -91,7 +156,7 @@ export default function QuizPage() {
     return () => {
       cancelled = true;
     };
-  }, [quizId]);
+  }, [attemptFromUrl, navigate, quizId]);
 
   const displayQuestions = useMemo(() => {
     if (!quiz) return [];
@@ -108,6 +173,16 @@ export default function QuizPage() {
     }).length,
     [answers, displayQuestions],
   );
+
+  useEffect(() => {
+    if (!attemptId) return;
+
+    try {
+      window.localStorage.setItem(getDraftStorageKey(attemptId), JSON.stringify(answers));
+    } catch {
+      // Игнорируем ошибку localStorage: прохождение всё равно работает, просто без локального черновика.
+    }
+  }, [answers, attemptId]);
 
   useEffect(() => {
     if (!deadlineAt || !attemptId) {
@@ -144,6 +219,7 @@ export default function QuizPage() {
       setOptionOrder(created.option_order ?? {});
       setDeadlineAt(created.deadline_at);
       setAutoSubmitted(false);
+      setAnswers(readDraftAnswers(created.id, makeInitialAnswers(quiz?.questions ?? [])));
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Не удалось начать попытку.");
@@ -179,6 +255,11 @@ export default function QuizPage() {
       });
 
       const result = await submitAttempt(attemptId, { answers: payload });
+      try {
+        window.localStorage.removeItem(getDraftStorageKey(attemptId));
+      } catch {
+        // Ничего не делаем: результат уже отправлен.
+      }
       navigate(`/attempts/${result.id}/result`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Не удалось отправить ответы.");
@@ -192,6 +273,9 @@ export default function QuizPage() {
   if (!quiz) return <div>Квиз не найден.</div>;
 
   const canStart = quiz.publish_status === "published" && displayQuestions.length > 0;
+  const itemPath = quiz.kind === "trivia" ? "trivia" : "quizzes";
+  const pluralTitle = quiz.kind === "trivia" ? "викторинам" : "квизам";
+  const materialTitle = quiz.kind === "trivia" ? "викторина" : "квиз";
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
@@ -200,8 +284,8 @@ export default function QuizPage() {
           <h2 style={{ margin: "0 0 8px", fontSize: 34 }}>{quiz.title}</h2>
           <p style={{ margin: 0, color: "#64748B", maxWidth: 780 }}>{quiz.description || "Без описания"}</p>
         </div>
-        <Link to="/quizzes" style={{ background: "white", color: "#0F172A", border: "1px solid #E6EEF6", borderRadius: 8, padding: "9px 12px" }}>
-          Назад к квизам
+        <Link to={`/${itemPath}`} style={{ background: "white", color: "#0F172A", border: "1px solid #E6EEF6", borderRadius: 8, padding: "9px 12px" }}>
+          Назад к {pluralTitle}
         </Link>
       </div>
 
@@ -267,7 +351,7 @@ export default function QuizPage() {
           <div>
             <h3 style={{ margin: "0 0 4px" }}>Готов начать?</h3>
             <div style={{ color: "#64748B" }}>
-              {canStart ? "После старта будет создана попытка. Ответы можно отправить один раз." : "Этот квиз пока нельзя пройти: он не опубликован или в нём нет вопросов."}
+              {canStart ? `После старта будет создана попытка. Ответы можно отправить один раз.` : `Этот ${materialTitle} пока нельзя пройти: он не опубликован или в нём нет вопросов.`}
             </div>
           </div>
           <button onClick={onStartAttempt} disabled={busy || !canStart} style={{ background: "#2563EB", color: "white", padding: "10px 16px", borderRadius: 8 }}>
@@ -277,7 +361,7 @@ export default function QuizPage() {
       ) : (
         <section style={{ ...panel, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
           <div>
-            <h3 style={{ margin: "0 0 4px" }}>Попытка #{attemptId}</h3>
+            <h3 style={{ margin: "0 0 4px" }}>Попытка {getAttemptCode(attemptId)}</h3>
             <div style={{ color: "#64748B" }}>Отвечено: {answeredCount} из {displayQuestions.length}</div>
             <div style={{ color: remainingSeconds !== null && remainingSeconds <= 30 ? "#B91C1C" : "#64748B", fontWeight: 700 }}>
               Осталось времени: {formatTime(remainingSeconds)}

@@ -28,6 +28,7 @@ export function submitAttempt(attemptId: number, payload: SubmitRequest): Promis
   });
 }
 
-export function getMyAttempts(): Promise<PaginatedResponse<AttemptItem>> {
-  return http<PaginatedResponse<AttemptItem>>("/api/attempts/");
+export function getMyAttempts(params?: Record<string, string>): Promise<PaginatedResponse<AttemptItem>> {
+  const query = params ? `?${new URLSearchParams(params).toString()}` : "";
+  return http<PaginatedResponse<AttemptItem>>(`/api/attempts/${query}`);
 }

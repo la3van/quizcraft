@@ -61,15 +61,22 @@ export default function App() {
             <Route path="/forgot-password" element={<GuestRoute><ForgotPassword /></GuestRoute>} />
             <Route path="/reset-password/:uid/:token" element={<GuestRoute><ResetPassword /></GuestRoute>} />
             <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
-            <Route path="/quizzes" element={<PrivateRoute><QuizzesList /></PrivateRoute>} />
-            <Route path="/quizzes/create" element={<PrivateRoute><CreateEditQuiz /></PrivateRoute>} />
+            <Route path="/quizzes" element={<PrivateRoute><QuizzesList kind="quiz" /></PrivateRoute>} />
+            <Route path="/trivia" element={<PrivateRoute><QuizzesList kind="trivia" /></PrivateRoute>} />
+            <Route path="/quizzes/create" element={<PrivateRoute><CreateEditQuiz initialKind="quiz" /></PrivateRoute>} />
+            <Route path="/trivia/create" element={<PrivateRoute><CreateEditQuiz initialKind="trivia" /></PrivateRoute>} />
             <Route path="/quizzes/:id/edit" element={<PrivateRoute><CreateEditQuiz /></PrivateRoute>} />
+            <Route path="/trivia/:id/edit" element={<PrivateRoute><CreateEditQuiz /></PrivateRoute>} />
             <Route path="/quizzes/:id/analytics" element={<PrivateRoute><QuizAnalytics /></PrivateRoute>} />
+            <Route path="/trivia/:id/analytics" element={<PrivateRoute><QuizAnalytics /></PrivateRoute>} />
             <Route path="/questions" element={<PrivateRoute><QuestionBank /></PrivateRoute>} />
             <Route path="/join" element={<PrivateRoute><JoinQuiz /></PrivateRoute>} />
             <Route path="/join/:code" element={<PrivateRoute><JoinQuiz /></PrivateRoute>} />
             <Route path="/quizzes/:id" element={<PrivateRoute><QuizPage /></PrivateRoute>} />
+            <Route path="/trivia/:id" element={<PrivateRoute><QuizPage /></PrivateRoute>} />
             <Route path="/attempts/:attemptId/result" element={<PrivateRoute><QuizResult /></PrivateRoute>} />
+            <Route path="/quiz-attempts" element={<PrivateRoute><AttemptsPage kind="quiz" /></PrivateRoute>} />
+            <Route path="/trivia-attempts" element={<PrivateRoute><AttemptsPage kind="trivia" /></PrivateRoute>} />
             <Route path="/attempts" element={<PrivateRoute><AttemptsPage /></PrivateRoute>} />
             <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
             <Route path="*" element={<NotFound />} />

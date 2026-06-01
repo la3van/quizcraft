@@ -1,4 +1,5 @@
 import csv
+from datetime import timedelta
 from pathlib import Path
 
 from django.conf import settings
@@ -6,8 +7,9 @@ from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
 from django.core.management.base import BaseCommand
 from django.db import transaction
+from django.utils import timezone
 
-from quizzes.models import Option, Question, QuestionTopic, Quiz
+from quizzes.models import Answer, Attempt, Option, Question, QuestionTopic, Quiz
 
 User = get_user_model()
 
@@ -214,6 +216,77 @@ MANUAL_QUESTIONS = [
         "explanation": "Для гиперссылок используется тег a с атрибутом href.",
         "options": [("<a>", True), ("<p>", False), ("<div>", False), ("<img>", False)],
     },
+    {
+        "text": "В каком фильме звучит фраза «May the Force be with you»?",
+        "type": Question.QuestionType.CHOICE_SINGLE,
+        "points": 1,
+        "topic": "Кино",
+        "tags": "кино, звездные войны, поп-культура",
+        "learning_goal": "Развлекательная проверка знаний о популярных фильмах",
+        "explanation": "Фраза «May the Force be with you» стала одной из самых известных цитат франшизы Star Wars.",
+        "options": [("Звёздные войны", True), ("Матрица", False), ("Назад в будущее", False), ("Интерстеллар", False)],
+    },
+    {
+        "text": "Какая группа выпустила альбом Abbey Road?",
+        "type": Question.QuestionType.CHOICE_SINGLE,
+        "points": 1,
+        "topic": "Музыка",
+        "tags": "музыка, рок, the beatles",
+        "learning_goal": "Развлекательная проверка музыкальной эрудиции",
+        "explanation": "Abbey Road — один из самых известных альбомов группы The Beatles.",
+        "options": [("The Beatles", True), ("Queen", False), ("Pink Floyd", False), ("The Rolling Stones", False)],
+    },
+    {
+        "text": "Какие из этих персонажей относятся к вселенной Marvel?",
+        "type": Question.QuestionType.CHOICE_MULTI,
+        "points": 2,
+        "topic": "Кино",
+        "tags": "кино, marvel, супергерои",
+        "learning_goal": "Развлекательная проверка знаний о супергеройских фильмах",
+        "explanation": "Железный человек, Человек-паук и Тор относятся к Marvel, а Бэтмен — к DC.",
+        "options": [("Железный человек", True), ("Человек-паук", True), ("Тор", True), ("Бэтмен", False)],
+    },
+    {
+        "text": "В шахматах ферзь ходит только по диагонали.",
+        "type": Question.QuestionType.TRUE_FALSE,
+        "points": 1,
+        "topic": "Игры",
+        "tags": "шахматы, игры, правила",
+        "learning_goal": "Развлекательная проверка знания правил настольных игр",
+        "explanation": "Ферзь ходит по вертикали, горизонтали и диагонали, поэтому утверждение неверно.",
+        "options": [("Верно", False), ("Неверно", True)],
+    },
+    {
+        "text": "Столица Австралии — Сидней.",
+        "type": Question.QuestionType.TRUE_FALSE,
+        "points": 1,
+        "topic": "Общая эрудиция",
+        "tags": "география, эрудиция, страны",
+        "learning_goal": "Развлекательная проверка общей эрудиции",
+        "explanation": "Столица Австралии — Канберра, а Сидней является крупнейшим городом страны.",
+        "options": [("Верно", False), ("Неверно", True)],
+    },
+    {
+        "text": "Как называется самый большой океан на Земле?",
+        "type": Question.QuestionType.INPUT_TEXT,
+        "points": 1,
+        "topic": "Общая эрудиция",
+        "tags": "география, океаны, эрудиция",
+        "learning_goal": "Развлекательная проверка базовой географической эрудиции",
+        "explanation": "Самый большой океан на Земле — Тихий океан.",
+        "correct_text": "Тихий океан",
+    },
+    {
+        "text": "Сколько игроков одной команды находится на футбольном поле в начале матча?",
+        "type": Question.QuestionType.INPUT_NUMBER,
+        "points": 1,
+        "topic": "Общая эрудиция",
+        "tags": "спорт, футбол, эрудиция",
+        "learning_goal": "Развлекательная проверка знания спортивных правил",
+        "explanation": "В начале футбольного матча на поле выходит 11 игроков одной команды.",
+        "correct_number": 11,
+        "numeric_tolerance": 0,
+    },
 ]
 
 
@@ -248,7 +321,7 @@ class Command(BaseCommand):
 
             topics = {
                 name: QuestionTopic.objects.get_or_create(author=teacher, name=name)[0]
-                for name in ["Математика", "Информатика", "История", "Английский язык", "Медиа-вопросы"]
+                for name in ["Математика", "Информатика", "История", "Английский язык", "Медиа-вопросы", "Кино", "Музыка", "Общая эрудиция", "Игры"]
             }
 
             self._write_csv_sample()
@@ -397,6 +470,7 @@ class Command(BaseCommand):
             teacher,
             "Базовый тест по информатике",
             [],
+            kind=Quiz.Kind.QUIZ,
             description="Квиз для проверки базовых знаний по web, HTTP, Docker и структурам данных.",
             visibility=Quiz.Visibility.PUBLIC,
             difficulty=Quiz.Difficulty.MEDIUM,
@@ -422,9 +496,10 @@ class Command(BaseCommand):
 
         math = self._upsert_quiz(
             teacher,
-            "Мини-тест по математике",
+            "Математика 5 класс: базовый уровень",
             [],
-            description="Проверка арифметики, площади квадрата и числовых ответов с допуском.",
+            kind=Quiz.Kind.QUIZ,
+            description="Академический квиз для проверки арифметики, площади квадрата и простых чисел.",
             visibility=Quiz.Visibility.PUBLIC,
             difficulty=Quiz.Difficulty.EASY,
             publish_status=Quiz.PublishStatus.PUBLISHED,
@@ -450,7 +525,8 @@ class Command(BaseCommand):
             teacher,
             "Закрытая домашняя работа",
             [],
-            description="Приватный квиз, доступный только выбранным пользователям.",
+            kind=Quiz.Kind.QUIZ,
+            description="Приватный учебный квиз, доступный только выбранным пользователям.",
             visibility=Quiz.Visibility.PRIVATE,
             difficulty=Quiz.Difficulty.MEDIUM,
             publish_status=Quiz.PublishStatus.PUBLISHED,
@@ -476,6 +552,7 @@ class Command(BaseCommand):
             teacher,
             "Контрольная без показа результата",
             [],
+            kind=Quiz.Kind.QUIZ,
             description="Участник отправляет ответы, но результат скрыт преподавателем.",
             visibility=Quiz.Visibility.PUBLIC,
             difficulty=Quiz.Difficulty.HARD,
@@ -497,36 +574,12 @@ class Command(BaseCommand):
             ],
         )
 
-        live = self._upsert_quiz(
-            teacher,
-            "Live-викторина для аудитории",
-            [],
-            description="Демонстрационный квиз с режимом live-прохождения.",
-            visibility=Quiz.Visibility.PUBLIC,
-            difficulty=Quiz.Difficulty.EASY,
-            publish_status=Quiz.PublishStatus.PUBLISHED,
-            delivery_mode=Quiz.DeliveryMode.LIVE,
-            time_limit_minutes=2,
-            max_attempts=1,
-            shuffle_questions=True,
-            shuffle_options=True,
-            feedback_policy=Quiz.FeedbackPolicy.AFTER_SUBMIT,
-        )
-        self._fill_quiz(
-            live,
-            questions,
-            [
-                "Сколько будет 2 + 2?",
-                "CSS отвечает за внешний вид страницы.",
-                "Что изображено на прикреплённой картинке?",
-            ],
-        )
-
         draft = self._upsert_quiz(
             teacher,
             "Черновик будущего теста",
             [],
-            description="Этот квиз ещё нельзя проходить студентам.",
+            kind=Quiz.Kind.QUIZ,
+            description="Этот академический квиз ещё нельзя проходить студентам.",
             visibility=Quiz.Visibility.PUBLIC,
             difficulty=Quiz.Difficulty.EASY,
             publish_status=Quiz.PublishStatus.DRAFT,
@@ -543,7 +596,8 @@ class Command(BaseCommand):
             teacher,
             "Архивный тест прошлого семестра",
             [],
-            description="Старый тест, который больше не используется.",
+            kind=Quiz.Kind.QUIZ,
+            description="Старый учебный тест, который больше не используется.",
             visibility=Quiz.Visibility.PUBLIC,
             difficulty=Quiz.Difficulty.MEDIUM,
             publish_status=Quiz.PublishStatus.ARCHIVED,
@@ -555,3 +609,203 @@ class Command(BaseCommand):
             feedback_policy=Quiz.FeedbackPolicy.AFTER_SUBMIT,
         )
         self._fill_quiz(archived, questions, ["Какой тег HTML используется для ссылки?"])
+
+        live = self._upsert_quiz(
+            teacher,
+            "Live-викторина для аудитории",
+            [],
+            kind=Quiz.Kind.TRIVIA,
+            description="Развлекательная live-викторина для аудитории: кино, музыка, игры и общая эрудиция.",
+            visibility=Quiz.Visibility.PUBLIC,
+            difficulty=Quiz.Difficulty.EASY,
+            publish_status=Quiz.PublishStatus.PUBLISHED,
+            delivery_mode=Quiz.DeliveryMode.LIVE,
+            time_limit_minutes=2,
+            max_attempts=1,
+            shuffle_questions=True,
+            shuffle_options=True,
+            feedback_policy=Quiz.FeedbackPolicy.AFTER_SUBMIT,
+        )
+        self._fill_quiz(
+            live,
+            questions,
+            [
+                "В каком фильме звучит фраза «May the Force be with you»?",
+                "Какая группа выпустила альбом Abbey Road?",
+                "В шахматах ферзь ходит только по диагонали.",
+            ],
+        )
+
+        movie_music = self._upsert_quiz(
+            teacher,
+            "Викторина: кино и музыка",
+            [],
+            kind=Quiz.Kind.TRIVIA,
+            description="Развлекательная викторина с вопросами про фильмы, супергероев и рок-музыку.",
+            visibility=Quiz.Visibility.PUBLIC,
+            difficulty=Quiz.Difficulty.MEDIUM,
+            publish_status=Quiz.PublishStatus.PUBLISHED,
+            delivery_mode=Quiz.DeliveryMode.SELF_PACED,
+            time_limit_minutes=4,
+            max_attempts=0,
+            shuffle_questions=True,
+            shuffle_options=True,
+            feedback_policy=Quiz.FeedbackPolicy.AFTER_SUBMIT,
+        )
+        self._fill_quiz(
+            movie_music,
+            questions,
+            [
+                "В каком фильме звучит фраза «May the Force be with you»?",
+                "Какая группа выпустила альбом Abbey Road?",
+                "Какие из этих персонажей относятся к вселенной Marvel?",
+            ],
+        )
+
+        erudition = self._upsert_quiz(
+            teacher,
+            "Викторина общей эрудиции",
+            [],
+            kind=Quiz.Kind.TRIVIA,
+            description="Набор развлекательных вопросов по географии, спорту и настольным играм.",
+            visibility=Quiz.Visibility.PUBLIC,
+            difficulty=Quiz.Difficulty.EASY,
+            publish_status=Quiz.PublishStatus.PUBLISHED,
+            delivery_mode=Quiz.DeliveryMode.SELF_PACED,
+            time_limit_minutes=3,
+            max_attempts=0,
+            shuffle_questions=True,
+            shuffle_options=True,
+            feedback_policy=Quiz.FeedbackPolicy.AFTER_SUBMIT,
+        )
+        self._fill_quiz(
+            erudition,
+            questions,
+            [
+                "Столица Австралии — Сидней.",
+                "Как называется самый большой океан на Земле?",
+                "Сколько игроков одной команды находится на футбольном поле в начале матча?",
+                "В шахматах ферзь ходит только по диагонали.",
+            ],
+        )
+
+        draft_trivia = self._upsert_quiz(
+            teacher,
+            "Черновик развлекательной викторины",
+            [],
+            kind=Quiz.Kind.TRIVIA,
+            description="Черновик будущей развлекательной викторины, который нужен для проверки фильтра по статусу.",
+            visibility=Quiz.Visibility.PUBLIC,
+            difficulty=Quiz.Difficulty.MEDIUM,
+            publish_status=Quiz.PublishStatus.DRAFT,
+            delivery_mode=Quiz.DeliveryMode.SELF_PACED,
+            time_limit_minutes=None,
+            max_attempts=0,
+            shuffle_questions=False,
+            shuffle_options=True,
+            feedback_policy=Quiz.FeedbackPolicy.AFTER_SUBMIT,
+        )
+        self._fill_quiz(draft_trivia, questions, ["В каком фильме звучит фраза «May the Force be with you»?"])
+
+        self._create_demo_attempts(
+            student1,
+            student2,
+            [basic, math, private, hidden, live, movie_music, erudition],
+        )
+
+    def _create_demo_attempts(self, student1, student2, quizzes):
+        quizzes_by_title = {quiz.title: quiz for quiz in quizzes}
+        Attempt.objects.filter(user__in=[student1, student2], quiz__in=quizzes).delete()
+
+        self._create_submitted_attempt(
+            student1,
+            quizzes_by_title["Базовый тест по информатике"],
+            [True, True, False, True, False],
+        )
+        self._create_submitted_attempt(
+            student1,
+            quizzes_by_title["Математика 5 класс: базовый уровень"],
+            [True, True, True, True],
+        )
+        self._create_submitted_attempt(
+            student1,
+            quizzes_by_title["Live-викторина для аудитории"],
+            [True, False, True],
+        )
+
+        self._create_submitted_attempt(
+            student2,
+            quizzes_by_title["Базовый тест по информатике"],
+            [False, True, True, False, True],
+        )
+        self._create_submitted_attempt(
+            student2,
+            quizzes_by_title["Закрытая домашняя работа"],
+            [True, True, False],
+        )
+        self._create_submitted_attempt(
+            student2,
+            quizzes_by_title["Викторина: кино и музыка"],
+            [True, True, False],
+        )
+        self._create_submitted_attempt(
+            student2,
+            quizzes_by_title["Викторина общей эрудиции"],
+            [False, True, True, False],
+        )
+
+    def _create_submitted_attempt(self, user, quiz, correctness_pattern):
+        questions = list(quiz.questions.all().prefetch_related("options").order_by("order", "id"))
+        question_order = [question.id for question in questions]
+        option_order = {
+            str(question.id): list(question.options.order_by("id").values_list("id", flat=True))
+            for question in questions
+        }
+
+        attempt = Attempt.objects.create(
+            user=user,
+            quiz=quiz,
+            question_order=question_order,
+            option_order=option_order,
+        )
+
+        if quiz.time_limit_minutes:
+            attempt.deadline_at = attempt.started_at + timedelta(minutes=quiz.time_limit_minutes)
+
+        total_score = 0.0
+        for index, question in enumerate(questions):
+            should_be_correct = correctness_pattern[index % len(correctness_pattern)]
+            answer = Answer.objects.create(attempt=attempt, question=question)
+            total_score += self._fill_demo_answer(answer, question, should_be_correct)
+
+        attempt.score = total_score
+        attempt.is_submitted = True
+        attempt.finished_at = timezone.now()
+        attempt.save(update_fields=["deadline_at", "score", "is_submitted", "finished_at"])
+
+    def _fill_demo_answer(self, answer, question, should_be_correct):
+        if question.type in [
+            Question.QuestionType.CHOICE_SINGLE,
+            Question.QuestionType.CHOICE_MULTI,
+            Question.QuestionType.TRUE_FALSE,
+        ]:
+            correct_options = list(question.options.filter(is_correct=True).order_by("id"))
+            wrong_options = list(question.options.filter(is_correct=False).order_by("id"))
+            selected_options = correct_options if should_be_correct else wrong_options[:1]
+            answer.selected_options.set(selected_options)
+            return float(question.points) if should_be_correct else 0.0
+
+        if question.type == Question.QuestionType.INPUT_TEXT:
+            answer.text_answer = question.correct_text if should_be_correct else "не знаю"
+            answer.save(update_fields=["text_answer"])
+            return float(question.points) if should_be_correct else 0.0
+
+        if question.type == Question.QuestionType.INPUT_NUMBER:
+            if should_be_correct:
+                answer.number_answer = question.correct_number
+            else:
+                answer.number_answer = (question.correct_number or 0) + 100
+            answer.save(update_fields=["number_answer"])
+            return float(question.points) if should_be_correct else 0.0
+
+        return 0.0

@@ -1,13 +1,16 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { getQuizByCode } from "../api/quizzes";
 
 export default function JoinQuiz() {
-  const { code } = useParams();
+  const { code: pathCode } = useParams();
+  const [searchParams] = useSearchParams();
+  const queryCode = searchParams.get("code") ?? "";
+  const initialCode = pathCode ?? queryCode;
   const navigate = useNavigate();
-  const [inputCode, setInputCode] = useState(code ?? "");
-  const [loading, setLoading] = useState(Boolean(code));
+  const [inputCode, setInputCode] = useState(initialCode);
+  const [loading, setLoading] = useState(Boolean(initialCode));
   const [error, setError] = useState<string | null>(null);
 
   async function openByCode(rawCode: string) {
@@ -21,18 +24,21 @@ export default function JoinQuiz() {
       setLoading(true);
       setError(null);
       const quiz = await getQuizByCode(cleanCode);
-      navigate(`/quizzes/${quiz.id}`);
+      const quizPath = quiz.kind === "trivia" ? "trivia" : "quizzes";
+      navigate(`/${quizPath}/${quiz.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Квиз с таким кодом не найден или недоступен.");
+      setError(err instanceof Error ? err.message : "Квиз или викторина с таким кодом не найдены или недоступны.");
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    if (code) void openByCode(code);
+    if (!initialCode) return;
+    setInputCode(initialCode.toUpperCase());
+    void openByCode(initialCode);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [code]);
+  }, [initialCode]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -42,8 +48,8 @@ export default function JoinQuiz() {
   return (
     <div style={{ maxWidth: 520, margin: "40px auto", display: "grid", gap: 16 }}>
       <div>
-        <h2 style={{ margin: "0 0 8px", fontSize: 34 }}>Войти в квиз по коду</h2>
-        <p style={{ margin: 0, color: "#64748B" }}>Введите код, который выдал преподаватель.</p>
+        <h2 style={{ margin: "0 0 8px", fontSize: 34 }}>Войти по коду</h2>
+        <p style={{ margin: 0, color: "#64748B" }}>Введите код квиза или викторины, который выдал преподаватель.</p>
       </div>
 
       {error && (
@@ -63,7 +69,7 @@ export default function JoinQuiz() {
           />
         </label>
         <button type="submit" disabled={loading} style={{ background: "#2563EB", color: "white" }}>
-          {loading ? "Открываем..." : "Открыть квиз"}
+          {loading ? "Открываем..." : "Открыть"}
         </button>
       </form>
     </div>

@@ -4,6 +4,7 @@ from datetime import timedelta
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.validators import URLValidator
+from django.db import models, transaction
 from django.utils import timezone
 from rest_framework import serializers
 
@@ -58,6 +59,14 @@ def question_type_label(value: str) -> str:
     return labels.get(value, value)
 
 
+def quiz_kind_label(value: str) -> str:
+    labels = {
+        Quiz.Kind.QUIZ: "Квиз",
+        Quiz.Kind.TRIVIA: "Викторина",
+    }
+    return labels.get(value, value)
+
+
 def grade_choice_answer(question: Question, selected_option_ids: set[int]) -> tuple[bool, float, set[int]]:
     correct_ids = set(question.options.filter(is_correct=True).values_list("id", flat=True))
     if question.type == Question.QuestionType.CHOICE_MULTI:
@@ -90,6 +99,93 @@ def grade_number_answer(question: Question, number_answer: float | None) -> tupl
     is_correct = abs(float(number_answer) - float(question.correct_number)) <= tolerance
     earned = float(question.points) if is_correct else 0.0
     return is_correct, earned
+
+
+def calculate_answer_score_for_question(question, selected_options, text_answer=None, number_answer=None):
+    if question.type in CHOICE_TYPES:
+        selected_ids = set(selected_options.values_list("id", flat=True))
+        _, earned, _ = grade_choice_answer(question, selected_ids)
+        return earned
+
+    if question.type == Question.QuestionType.INPUT_TEXT:
+        _, earned = grade_text_answer(question, text_answer)
+        return earned
+
+    if question.type == Question.QuestionType.INPUT_NUMBER:
+        _, earned = grade_number_answer(question, number_answer)
+        return earned
+
+    return 0.0
+
+
+def is_attempt_expired(attempt: Attempt) -> bool:
+    return bool(
+        not attempt.is_submitted
+        and attempt.deadline_at
+        and attempt.deadline_at <= timezone.now()
+    )
+
+
+def finalize_expired_attempt(attempt: Attempt) -> Attempt:
+    if not is_attempt_expired(attempt):
+        return attempt
+
+    with transaction.atomic():
+        locked_attempt = (
+            Attempt.objects
+            .select_for_update()
+            .select_related("quiz")
+            .prefetch_related("quiz__questions__options", "answers__selected_options")
+            .get(pk=attempt.pk)
+        )
+
+        if not is_attempt_expired(locked_attempt):
+            return locked_attempt
+
+        quiz_questions = list(locked_attempt.quiz.questions.all().prefetch_related("options"))
+        answers_by_question_id = {
+            answer.question_id: answer
+            for answer in locked_attempt.answers.all().prefetch_related("selected_options")
+        }
+        total_score = 0.0
+
+        for question in quiz_questions:
+            answer = answers_by_question_id.get(question.id)
+            if answer is None:
+                answer = Answer.objects.create(attempt=locked_attempt, question=question)
+
+            total_score += calculate_answer_score_for_question(
+                question=question,
+                selected_options=answer.selected_options.all(),
+                text_answer=answer.text_answer,
+                number_answer=answer.number_answer,
+            )
+
+        locked_attempt.score = total_score
+        locked_attempt.is_submitted = True
+        locked_attempt.finished_at = locked_attempt.deadline_at or timezone.now()
+        locked_attempt.save(update_fields=["score", "is_submitted", "finished_at"])
+        return locked_attempt
+
+
+def finalize_expired_attempts(queryset) -> None:
+    expired_ids = list(
+        queryset
+        .filter(is_submitted=False, deadline_at__isnull=False, deadline_at__lte=timezone.now())
+        .values_list("id", flat=True)
+    )
+
+    if not expired_ids:
+        return
+
+    attempts = (
+        Attempt.objects
+        .filter(id__in=expired_ids)
+        .select_related("quiz")
+        .prefetch_related("quiz__questions__options", "answers__selected_options")
+    )
+    for attempt in attempts:
+        finalize_expired_attempt(attempt)
 
 
 class OptionSerializer(serializers.ModelSerializer):
@@ -158,6 +254,7 @@ class QuestionSerializer(serializers.ModelSerializer):
 class QuizDetailSerializer(serializers.ModelSerializer):
     questions = QuestionSerializer(many=True, read_only=True)
     attachments = QuizAttachmentSerializer(many=True, read_only=True)
+    kind_label = serializers.SerializerMethodField()
     difficulty_label = serializers.SerializerMethodField()
     publish_status_label = serializers.SerializerMethodField()
     feedback_policy_label = serializers.SerializerMethodField()
@@ -170,6 +267,8 @@ class QuizDetailSerializer(serializers.ModelSerializer):
             "id",
             "title",
             "description",
+            "kind",
+            "kind_label",
             "visibility",
             "difficulty",
             "difficulty_label",
@@ -188,6 +287,9 @@ class QuizDetailSerializer(serializers.ModelSerializer):
             "questions",
             "attachments",
         ]
+
+    def get_kind_label(self, obj):
+        return quiz_kind_label(obj.kind)
 
     def get_difficulty_label(self, obj):
         labels = {
@@ -239,6 +341,9 @@ class AttemptCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Квиз пока не опубликован.")
         if not quiz.questions.exists():
             raise serializers.ValidationError("В квизе пока нет вопросов.")
+
+        finalize_expired_attempts(Attempt.objects.filter(user=request.user, quiz=quiz))
+
         if quiz.max_attempts > 0:
             used_attempts = Attempt.objects.filter(user=request.user, quiz=quiz, is_submitted=True).count()
             if used_attempts >= quiz.max_attempts:
@@ -248,6 +353,17 @@ class AttemptCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         request = self.context["request"]
         quiz = validated_data["quiz"]
+
+        active_attempt = (
+            Attempt.objects
+            .filter(user=request.user, quiz=quiz, is_submitted=False)
+            .filter(models.Q(deadline_at__isnull=True) | models.Q(deadline_at__gt=timezone.now()))
+            .order_by("-id")
+            .first()
+        )
+        if active_attempt:
+            return active_attempt
+
         questions = list(quiz.questions.all().prefetch_related("options"))
         question_ids = [question.id for question in sorted(questions, key=lambda item: item.order)]
         if quiz.shuffle_questions:
@@ -274,12 +390,17 @@ class AttemptCreateSerializer(serializers.ModelSerializer):
 
 class AttemptListSerializer(serializers.ModelSerializer):
     quiz_title = serializers.CharField(source="quiz.title", read_only=True)
+    quiz_kind = serializers.CharField(source="quiz.kind", read_only=True)
+    quiz_kind_label = serializers.SerializerMethodField()
     max_score = serializers.SerializerMethodField()
     percent = serializers.SerializerMethodField()
 
     class Meta:
         model = Attempt
-        fields = ["id", "quiz", "quiz_title", "score", "max_score", "percent", "is_submitted", "started_at", "deadline_at", "finished_at"]
+        fields = ["id", "quiz", "quiz_title", "quiz_kind", "quiz_kind_label", "score", "max_score", "percent", "is_submitted", "started_at", "deadline_at", "finished_at"]
+
+    def get_quiz_kind_label(self, obj):
+        return "Викторина" if obj.quiz.kind == Quiz.Kind.TRIVIA else "Квиз"
 
     def get_max_score(self, obj):
         return float(sum(q.points for q in obj.quiz.questions.all()))
@@ -441,10 +562,13 @@ class AnswerSubmitSerializer(serializers.Serializer):
 class QuizListSerializer(serializers.ModelSerializer):
     question_count = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
+    kind_label = serializers.SerializerMethodField()
     difficulty_label = serializers.SerializerMethodField()
     publish_status_label = serializers.SerializerMethodField()
     delivery_mode_label = serializers.SerializerMethodField()
     is_owner = serializers.SerializerMethodField()
+    active_attempt_id = serializers.SerializerMethodField()
+    active_attempt_deadline_at = serializers.SerializerMethodField()
 
     class Meta:
         model = Quiz
@@ -452,6 +576,8 @@ class QuizListSerializer(serializers.ModelSerializer):
             "id",
             "title",
             "description",
+            "kind",
+            "kind_label",
             "status",
             "visibility",
             "difficulty",
@@ -465,10 +591,15 @@ class QuizListSerializer(serializers.ModelSerializer):
             "delivery_mode_label",
             "question_count",
             "is_owner",
+            "active_attempt_id",
+            "active_attempt_deadline_at",
         ]
 
     def get_question_count(self, obj):
         return obj.questions.count()
+
+    def get_kind_label(self, obj):
+        return quiz_kind_label(obj.kind)
 
     def get_status(self, obj):
         visibility_label = "Публичный" if obj.visibility == Quiz.Visibility.PUBLIC else "Приватный"
@@ -493,6 +624,36 @@ class QuizListSerializer(serializers.ModelSerializer):
     def get_is_owner(self, obj):
         request = self.context.get("request")
         return bool(request and request.user.is_authenticated and obj.author_id == request.user.id)
+
+    def get_active_attempt(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            return None
+
+        cache = self.context.get("_active_attempts_by_quiz_id")
+        if cache is None:
+            active_attempts = (
+                Attempt.objects
+                .filter(user=request.user, is_submitted=False)
+                .filter(models.Q(deadline_at__isnull=True) | models.Q(deadline_at__gt=timezone.now()))
+                .order_by("-id")
+            )
+
+            cache = {}
+            for attempt in active_attempts:
+                cache.setdefault(attempt.quiz_id, attempt)
+
+            self.context["_active_attempts_by_quiz_id"] = cache
+
+        return cache.get(obj.id)
+
+    def get_active_attempt_id(self, obj):
+        attempt = self.get_active_attempt(obj)
+        return attempt.id if attempt else None
+
+    def get_active_attempt_deadline_at(self, obj):
+        attempt = self.get_active_attempt(obj)
+        return attempt.deadline_at if attempt else None
 
 
 class QuestionCreateSerializer(serializers.ModelSerializer):
@@ -533,9 +694,6 @@ class QuestionCreateSerializer(serializers.ModelSerializer):
         return [option for option in options if option.get("text", "").strip()]
 
     def validate_topic(self, topic):
-        request = self.context.get("request")
-        if topic and request and topic.author_id != request.user.id:
-            raise serializers.ValidationError("Нельзя использовать тему другого пользователя.")
         return topic
 
     def validate(self, attrs):
@@ -579,6 +737,8 @@ class BankQuestionSerializer(QuestionCreateSerializer):
     options = OptionWithCorrectSerializer(many=True, required=False, default=list)
     topic_name = serializers.CharField(source="topic.name", read_only=True)
     type_label = serializers.SerializerMethodField()
+    author_name = serializers.SerializerMethodField()
+    is_owner = serializers.SerializerMethodField()
 
     class Meta(QuestionCreateSerializer.Meta):
         fields = [
@@ -592,6 +752,8 @@ class BankQuestionSerializer(QuestionCreateSerializer):
             "points",
             "topic",
             "topic_name",
+            "author_name",
+            "is_owner",
             "options",
             "media_kind",
             "media_file_url",
@@ -606,6 +768,15 @@ class BankQuestionSerializer(QuestionCreateSerializer):
 
     def get_type_label(self, obj):
         return question_type_label(obj.type)
+
+    def get_author_name(self, obj):
+        if not obj.author_id:
+            return "Без автора"
+        return obj.author.get_full_name() or obj.author.username
+
+    def get_is_owner(self, obj):
+        request = self.context.get("request")
+        return bool(request and request.user.is_authenticated and obj.author_id == request.user.id)
 
     def create(self, validated_data):
         options_data = validated_data.pop("options", [])
@@ -666,6 +837,7 @@ class QuizWriteSerializer(serializers.ModelSerializer):
             "id",
             "title",
             "description",
+            "kind",
             "visibility",
             "difficulty",
             "publish_status",
@@ -782,6 +954,7 @@ class QuizEditSerializer(serializers.ModelSerializer):
             "id",
             "title",
             "description",
+            "kind",
             "visibility",
             "difficulty",
             "publish_status",

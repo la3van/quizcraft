@@ -23,8 +23,8 @@ class QuizAttachmentInline(admin.TabularInline):
 
 @admin.register(Quiz)
 class QuizAdmin(admin.ModelAdmin):
-    list_display = ("id", "title", "author", "publish_status", "visibility", "difficulty", "delivery_mode", "access_code", "created_at")
-    list_filter = ("publish_status", "visibility", "difficulty", "delivery_mode", "feedback_policy", "created_at")
+    list_display = ("id", "title", "kind", "author", "publish_status", "visibility", "difficulty", "delivery_mode", "access_code", "created_at")
+    list_filter = ("kind", "publish_status", "visibility", "difficulty", "delivery_mode", "feedback_policy", "created_at")
     search_fields = ("title", "description", "author__username", "author__email")
     inlines = [QuestionInline, QuizAttachmentInline]
 

@@ -18,14 +18,112 @@ export default function Dashboard() {
           Добро пожаловать в QuizCraft!
         </h1>
         <p style={{ fontSize: 18, margin: "0 0 32px 0", maxWidth: 800, marginLeft: "auto", marginRight: "auto" }}>
-          QuizCraft — это современная веб-платформа для создания и проведения викторин и тестов. 
-          Платформа предназначена для преподавателей, тренеров и образовательных учреждений, 
-          позволяя легко создавать интерактивные тесты с различными типами вопросов, 
-          проводить их в режиме реального времени или как домашние задания, 
-          автоматически оценивать ответы и анализировать результаты. 
-          С QuizCraft вы можете управлять банком вопросов, настраивать таймеры, 
-          обеспечивать безопасность прохождения и экспортировать отчёты для дальнейшего анализа.
+          QuizCraft — это современная веб-платформа для создания и проведения учебных квизов и
+          развлекательных викторин. Платформа предназначена для преподавателей, тренеров,
+          образовательных учреждений и организаторов интерактивных мероприятий, позволяя легко
+          создавать задания с различными типами вопросов, проводить их в режиме реального времени
+          или как самостоятельные работы, автоматически оценивать ответы и анализировать результаты.
+          С QuizCraft вы можете управлять общим банком вопросов, настраивать таймеры, обеспечивать
+          безопасность прохождения и экспортировать отчёты для дальнейшего анализа.
         </p>
+      </section>
+
+      {/* Quiz vs Trivia Section */}
+      <section style={{ marginBottom: 60 }}>
+        <h2 style={{ textAlign: "center", marginBottom: 16, fontSize: 32 }}>
+          Чем отличаются квизы и викторины
+        </h2>
+        <p
+          style={{
+            maxWidth: 860,
+            margin: "0 auto 32px auto",
+            color: "#64748B",
+            textAlign: "center",
+            fontSize: 18,
+            lineHeight: 1.6,
+          }}
+        >
+          В QuizCraft эти форматы разделены по назначению: квизы используются для учебной проверки
+          знаний, а викторины — для более лёгких игровых и развлекательных сценариев.
+        </p>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 24 }}>
+          <div
+            style={{
+              background: "white",
+              padding: 28,
+              borderRadius: 16,
+              boxShadow: "0 2px 8px rgba(2,6,23,0.08)",
+              border: "1px solid #E6EEF6",
+            }}
+          >
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                background: "#EFF6FF",
+                color: "#2563EB",
+                padding: "8px 12px",
+                borderRadius: 999,
+                fontWeight: 700,
+                marginBottom: 18,
+              }}
+            >
+              📘 Квизы
+            </div>
+            <h3 style={{ marginTop: 0, marginBottom: 12, color: "#0F172A", fontSize: 24 }}>
+              Учебный формат
+            </h3>
+            <p style={{ color: "#64748B", lineHeight: 1.6, marginTop: 0 }}>
+              Квизы предназначены для академических и проверочных задач: уроков, домашних работ,
+              контрольных опросов и закрепления материала.
+            </p>
+            <ul style={{ margin: 0, paddingLeft: 18, color: "#64748B", lineHeight: 1.7 }}>
+              <li>Примеры: «Математика 5 класс», «Python: циклы», «История Древней Руси».</li>
+              <li>Главная цель — проверить знания и увидеть результат обучения.</li>
+              <li>Подходят для преподавателей, учеников и образовательных курсов.</li>
+            </ul>
+          </div>
+
+          <div
+            style={{
+              background: "white",
+              padding: 28,
+              borderRadius: 16,
+              boxShadow: "0 2px 8px rgba(2,6,23,0.08)",
+              border: "1px solid #E6EEF6",
+            }}
+          >
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                background: "#ECFEFF",
+                color: "#0891B2",
+                padding: "8px 12px",
+                borderRadius: 999,
+                fontWeight: 700,
+                marginBottom: 18,
+              }}
+            >
+              🎮 Викторины
+            </div>
+            <h3 style={{ marginTop: 0, marginBottom: 12, color: "#0F172A", fontSize: 24 }}>
+              Развлекательный формат
+            </h3>
+            <p style={{ color: "#64748B", lineHeight: 1.6, marginTop: 0 }}>
+              Викторины нужны для игровых сценариев, мероприятий, командных активностей и вопросов
+              на общую эрудицию.
+            </p>
+            <ul style={{ margin: 0, paddingLeft: 18, color: "#64748B", lineHeight: 1.7 }}>
+              <li>Примеры: «Кино и музыка», «Marvel», «География для компании».</li>
+              <li>Главная цель — вовлечь участников и сделать прохождение интересным.</li>
+              <li>Подходят для live-игр, встреч, мероприятий и неформального обучения.</li>
+            </ul>
+          </div>
+        </div>
       </section>
 
       {/* Features Section */}
@@ -33,11 +131,11 @@ export default function Dashboard() {
         <h2 style={{ textAlign: "center", marginBottom: 40, fontSize: 32 }}>Особенности</h2>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 24 }}>
           <div style={{ background: "white", padding: 24, borderRadius: 12, boxShadow: "0 2px 8px rgba(2,6,23,0.08)", textAlign: "center" }}>
-            <h3 style={{ marginTop: 0, color: "#0F172A" }}>Конструктор квизов</h3>
+            <h3 style={{ marginTop: 0, color: "#0F172A" }}>Конструктор квизов и викторин</h3>
             <ul style={{ margin: 0, paddingLeft: 18, color: "#64748B", textAlign: "left" }}>
               <li>Типы заданий: одиночный/множественный выбор, соответствие и пр.</li>
               <li>Поддержка формул (LaTeX) и медиа-вложений</li>
-              <li>Банк вопросов с тегами и целями</li>
+              <li>Общий банк вопросов с тегами и целями</li>
             </ul>
           </div>
 
@@ -82,7 +180,26 @@ export default function Dashboard() {
             onMouseEnter={(e) => (e.currentTarget.style.background = "#1D4ED8")}
             onMouseLeave={(e) => (e.currentTarget.style.background = "#2563EB")}
           >
-            Список квизов
+            Учебные квизы
+          </Link>
+          <Link
+            to="/trivia"
+            style={{
+              background: "#06B6D4",
+              color: "white",
+              padding: "12px 28px",
+              borderRadius: 8,
+              textDecoration: "none",
+              fontSize: 16,
+              fontWeight: 600,
+              border: "none",
+              cursor: "pointer",
+              transition: "background 0.3s",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "#0891B2")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "#06B6D4")}
+          >
+            Развлекательные викторины
           </Link>
           <Link
             to="/questions"
@@ -103,21 +220,34 @@ export default function Dashboard() {
           <Link
             to="/quizzes/create"
             style={{
-              background: "#06B6D4",
-              color: "white",
+              background: "white",
+              color: "#0F172A",
               padding: "12px 28px",
               borderRadius: 8,
               textDecoration: "none",
               fontSize: 16,
               fontWeight: 600,
-              border: "none",
+              border: "1px solid #E6EEF6",
               cursor: "pointer",
-              transition: "background 0.3s",
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "#0891B2")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "#06B6D4")}
           >
-            Создать новый квиз
+            Создать квиз
+          </Link>
+          <Link
+            to="/trivia/create"
+            style={{
+              background: "white",
+              color: "#0F172A",
+              padding: "12px 28px",
+              borderRadius: 8,
+              textDecoration: "none",
+              fontSize: 16,
+              fontWeight: 600,
+              border: "1px solid #E6EEF6",
+              cursor: "pointer",
+            }}
+          >
+            Создать викторину
           </Link>
         </div>
       </section>

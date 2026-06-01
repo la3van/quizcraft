@@ -7,6 +7,7 @@ export type PaginatedResponse<T> = {
   results: T[];
 };
 
+export type QuizKind = "quiz" | "trivia";
 export type QuizVisibility = "public" | "private";
 export type QuizDifficulty = "easy" | "medium" | "hard";
 export type QuizPublishStatus = "draft" | "published" | "archived";
@@ -27,6 +28,8 @@ export type QuizListItem = {
   id: number;
   title: string;
   description: string;
+  kind: QuizKind;
+  kind_label: string;
   status: string;
   visibility: QuizVisibility;
   difficulty: QuizDifficulty;
@@ -40,6 +43,8 @@ export type QuizListItem = {
   delivery_mode_label: string;
   question_count: number;
   is_owner: boolean;
+  active_attempt_id: number | null;
+  active_attempt_deadline_at: string | null;
 };
 
 export type QuizOption = {
@@ -71,6 +76,8 @@ export type QuizDetail = {
   id: number;
   title: string;
   description: string;
+  kind: QuizKind;
+  kind_label: string;
   visibility: QuizVisibility;
   difficulty: QuizDifficulty;
   difficulty_label: string;
@@ -114,6 +121,7 @@ export type QuizQuestionCreate = {
 export type QuizCreateRequest = {
   title: string;
   description: string;
+  kind: QuizKind;
   visibility: QuizVisibility;
   difficulty: QuizDifficulty;
   publish_status: QuizPublishStatus;
@@ -131,6 +139,7 @@ export type QuizCreateResponse = {
   id: number;
   title: string;
   description: string;
+  kind: QuizKind;
   visibility: QuizVisibility;
   difficulty: QuizDifficulty;
   publish_status: QuizPublishStatus;
@@ -142,6 +151,7 @@ export type QuizEditData = {
   id: number;
   title: string;
   description: string;
+  kind: QuizKind;
   visibility: QuizVisibility;
   difficulty: QuizDifficulty;
   publish_status: QuizPublishStatus;
@@ -188,6 +198,8 @@ export type AttemptItem = {
   id: number;
   quiz: number;
   quiz_title: string;
+  quiz_kind: QuizKind;
+  quiz_kind_label: string;
   score: number;
   max_score: number;
   percent: number;
@@ -274,6 +286,8 @@ export type BankQuestion = {
   points: number;
   topic: number | null;
   topic_name: string | null;
+  author_name: string;
+  is_owner: boolean;
   options: QuizOptionWithCorrect[];
   media_kind: QuestionMediaKind;
   media_file_url: string;
@@ -326,7 +340,7 @@ export type QuizAnalyticsQuestion = {
 };
 
 export type QuizAnalytics = {
-  quiz: { id: number; title: string; max_score: number };
+  quiz: { id: number; title: string; kind: QuizKind; kind_label: string; max_score: number };
   summary: {
     attempts_count: number;
     average_percent: number;

@@ -57,6 +57,9 @@ export default function QuestionBank() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState("10");
   const [selectedTopic, setSelectedTopic] = useState("");
+  const [selectedType, setSelectedType] = useState<"" | QuestionType>("");
+  const [selectedMediaKind, setSelectedMediaKind] = useState<"" | QuestionMediaKind>("");
+  const [ownerFilter, setOwnerFilter] = useState("");
   const [search, setSearch] = useState("");
   const [newTopicName, setNewTopicName] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -84,6 +87,9 @@ export default function QuestionBank() {
   async function loadData(nextPage = page) {
     const params: Record<string, string> = { page: String(nextPage), page_size: pageSize };
     if (selectedTopic) params.topic = selectedTopic;
+    if (selectedType) params.type = selectedType;
+    if (selectedMediaKind) params.media_kind = selectedMediaKind;
+    if (ownerFilter) params.owner = ownerFilter;
     if (search.trim()) params.search = search.trim();
     const [topicData, questionData] = await Promise.all([getTopics(), getBankQuestions(params)]);
     setTopics(topicData.results);
@@ -99,6 +105,9 @@ export default function QuestionBank() {
         setError(null);
         const params: Record<string, string> = { page: String(page), page_size: pageSize };
         if (selectedTopic) params.topic = selectedTopic;
+        if (selectedType) params.type = selectedType;
+        if (selectedMediaKind) params.media_kind = selectedMediaKind;
+        if (ownerFilter) params.owner = ownerFilter;
         if (search.trim()) params.search = search.trim();
         const [topicData, questionData] = await Promise.all([getTopics(), getBankQuestions(params)]);
         if (cancelled) return;
@@ -115,7 +124,7 @@ export default function QuestionBank() {
     return () => {
       cancelled = true;
     };
-  }, [selectedTopic, search, page, pageSize]);
+  }, [selectedTopic, selectedType, selectedMediaKind, ownerFilter, search, page, pageSize]);
 
   function resetForm() {
     setEditingId(null);
@@ -136,6 +145,10 @@ export default function QuestionBank() {
   }
 
   function editQuestion(question: BankQuestion) {
+    if (!question.is_owner) {
+      setError("Редактировать можно только свои вопросы. Этот вопрос можно использовать в квизах и викторинах через конструктор.");
+      return;
+    }
     setEditingId(question.id);
     setText(question.text);
     setExplanation(question.explanation ?? "");
@@ -265,8 +278,8 @@ export default function QuestionBank() {
     <div style={{ display: "grid", gap: 16, minWidth: 0 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
         <div>
-          <h2 style={{ margin: "0 0 6px" }}>Банк вопросов</h2>
-          <p style={{ margin: 0, ...muted }}>Создавай вопросы, добавляй теги/цели, медиа и импортируй пул вопросов из CSV.</p>
+          <h2 style={{ margin: "0 0 6px" }}>Общий банк вопросов</h2>
+          <p style={{ margin: 0, ...muted }}>Все пользователи видят вопросы и могут добавлять их в квизы или викторины. Редактировать и удалять можно только свои вопросы.</p>
         </div>
         <div style={{ ...panel, minWidth: 220 }}>
           <strong style={{ fontSize: 20 }}>{questionCount}</strong>
@@ -286,12 +299,42 @@ export default function QuestionBank() {
 
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(360px, 450px)", gap: 16, alignItems: "start" }}>
         <section style={{ ...panel, display: "grid", gap: 12 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 220px", gap: 8 }}>
-            <input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Поиск по тексту вопроса" />
-            <select value={selectedTopic} onChange={(event) => { setSelectedTopic(event.target.value); setPage(1); }}>
-              <option value="">Все темы</option>
-              {topics.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-            </select>
+          <div style={{ display: "grid", gap: 10 }}>
+            <label style={{ display: "grid", gap: 6, color: "#64748B", fontSize: 13, fontWeight: 600 }}>
+              Поиск по банку вопросов
+              <input
+                value={search}
+                onChange={(event) => { setSearch(event.target.value); setPage(1); }}
+                placeholder="Например: футбол, HTML, океан, цикл, объяснение или тег"
+                style={{ width: "100%" }}
+              />
+            </label>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(130px, 1fr))", gap: 8 }}>
+              <select value={selectedTopic} onChange={(event) => { setSelectedTopic(event.target.value); setPage(1); }}>
+                <option value="">Все темы</option>
+                {topics.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+              <select value={selectedType} onChange={(event) => { setSelectedType(event.target.value as "" | QuestionType); setPage(1); }}>
+                <option value="">Все типы</option>
+                <option value="choice_single">Один вариант</option>
+                <option value="choice_multi">Несколько вариантов</option>
+                <option value="tf">Верно/неверно</option>
+                <option value="input_text">Краткий ответ</option>
+                <option value="input_number">Числовой ответ</option>
+              </select>
+              <select value={selectedMediaKind} onChange={(event) => { setSelectedMediaKind(event.target.value as "" | QuestionMediaKind); setPage(1); }}>
+                <option value="">Любые медиа</option>
+                <option value="none">Без медиа</option>
+                <option value="file">Файл/изображение</option>
+                <option value="audio">Аудио</option>
+                <option value="video">Видео</option>
+              </select>
+              <select value={ownerFilter} onChange={(event) => { setOwnerFilter(event.target.value); setPage(1); }}>
+                <option value="">Все авторы</option>
+                <option value="me">Только мои</option>
+              </select>
+            </div>
           </div>
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -324,16 +367,21 @@ export default function QuestionBank() {
                     <div style={{ color: "#64748B", fontSize: 13 }}>
                       {question.topic_name || "Без темы"} · {questionTypeLabel(question.type)} · {question.points} балл(ов)
                     </div>
+                    <div style={{ color: "#64748B", fontSize: 12 }}>
+                      Автор: {question.author_name}{question.is_owner ? " · мой вопрос" : ""}
+                    </div>
                     {(question.tags || question.learning_goal) && (
                       <div style={{ color: "#64748B", fontSize: 12 }}>
                         {question.tags && <>Теги: {question.tags}</>} {question.learning_goal && <>· Цель: {question.learning_goal}</>}
                       </div>
                     )}
                   </div>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                    <button type="button" onClick={() => editQuestion(question)} style={ghostButton}>Редактировать</button>
-                    <button type="button" onClick={() => removeQuestion(question.id)} style={dangerButton}>Удалить</button>
-                  </div>
+                  {question.is_owner && (
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                      <button type="button" onClick={() => editQuestion(question)} style={ghostButton}>Редактировать</button>
+                      <button type="button" onClick={() => removeQuestion(question.id)} style={dangerButton}>Удалить</button>
+                    </div>
+                  )}
                 </div>
 
                 {question.media_file_url || question.media_url ? <a href={question.media_file_url || question.media_url || "#"} target="_blank" rel="noreferrer">Медиа/вложение</a> : null}

@@ -3,7 +3,7 @@ import type { CSSProperties, FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { createQuiz, deleteQuizAttachment, getQuizForEdit, updateQuiz, uploadQuizAttachments } from "../api/quizzes";
 import { getBankQuestions } from "../api/questions";
-import type { BankQuestion, QuestionMediaKind, QuestionType, QuizAttachment, QuizCreateRequest, QuizDeliveryMode, QuizDifficulty, QuizFeedbackPolicy, QuizPublishStatus, QuizVisibility } from "../api/types";
+import type { BankQuestion, QuestionMediaKind, QuestionType, QuizAttachment, QuizCreateRequest, QuizDeliveryMode, QuizKind, QuizDifficulty, QuizFeedbackPolicy, QuizPublishStatus, QuizVisibility } from "../api/types";
 
 type DraftQuestionType = QuestionType;
 
@@ -138,7 +138,7 @@ function getDifficultyLabel(difficulty: QuizDifficulty) {
   return "Средний";
 }
 
-export default function CreateEditQuiz() {
+export default function CreateEditQuiz({ initialKind = "quiz" }: { initialKind?: QuizKind }) {
   const navigate = useNavigate();
   const { id } = useParams();
   const editId = id ? Number(id) : null;
@@ -146,6 +146,7 @@ export default function CreateEditQuiz() {
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [kind, setKind] = useState<QuizKind>(initialKind);
   const [visibility, setVisibility] = useState<QuizVisibility>("public");
   const [difficulty, setDifficulty] = useState<QuizDifficulty>("medium");
   const [publishStatus, setPublishStatus] = useState<QuizPublishStatus>("published");
@@ -170,6 +171,8 @@ export default function CreateEditQuiz() {
   const [newFiles, setNewFiles] = useState<File[]>([]);
   const [existingAttachments, setExistingAttachments] = useState<QuizAttachment[]>([]);
   const bankTotalPages = Math.max(1, Math.ceil(bankQuestionsCount / Number(bankPageSize || 5)));
+  const entityLabel = kind === "trivia" ? "викторину" : "квиз";
+  const entityLabelCapitalized = kind === "trivia" ? "Викторина" : "Квиз";
 
   useEffect(() => {
     let cancelled = false;
@@ -208,6 +211,7 @@ export default function CreateEditQuiz() {
         if (cancelled) return;
         setTitle(data.title);
         setDescription(data.description);
+        setKind(data.kind);
         setVisibility(data.visibility);
         setDifficulty(data.difficulty);
         setPublishStatus(data.publish_status);
@@ -300,7 +304,7 @@ export default function CreateEditQuiz() {
   function deleteQuestion(questionId: string) {
     setQuestions((prev) => {
       if (prev.length === 1) {
-        setError("В квизе должен остаться хотя бы один вопрос.");
+        setError(`${entityLabelCapitalized}: должен остаться хотя бы один вопрос.`);
         return prev;
       }
 
@@ -404,7 +408,7 @@ export default function CreateEditQuiz() {
     const maxAttempts = maxAttemptsText.trim() ? Number(maxAttemptsText) : 0;
 
     if (!cleanTitle) {
-      setError("Заполни название квиза.");
+      setError(`Заполни название: ${entityLabel} не может быть без имени.`);
       return null;
     }
 
@@ -509,6 +513,7 @@ export default function CreateEditQuiz() {
     return {
       title: cleanTitle,
       description: cleanDescription,
+      kind,
       visibility,
       difficulty,
       publish_status: publishStatus,
@@ -562,9 +567,9 @@ export default function CreateEditQuiz() {
     <form onSubmit={handleSubmit} style={{ maxWidth: 1180, margin: "0 auto", display: "grid", gap: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
         <div>
-          <h2 style={{ marginBottom: 6 }}>{isEditMode ? "Редактировать викторину" : "Создать викторину"}</h2>
+          <h2 style={{ marginBottom: 6 }}>{isEditMode ? `Редактировать ${entityLabel}` : `Создать ${entityLabel}`}</h2>
           <p style={{ margin: 0, color: "#64748B" }}>
-            Собери квиз из новых вопросов или добавь готовые вопросы из личного банка.
+            Собери материал из новых вопросов или добавь готовые вопросы из общего банка.
           </p>
         </div>
 
@@ -573,7 +578,7 @@ export default function CreateEditQuiz() {
             Отмена
           </button>
           <button type="submit" disabled={saving} style={{ background: "#06B6D4", color: "white" }}>
-            {saving ? "Сохраняем..." : isEditMode ? "Сохранить изменения" : "Сохранить квиз"}
+            {saving ? "Сохраняем..." : isEditMode ? "Сохранить изменения" : `Сохранить ${entityLabel}`}
           </button>
         </div>
       </div>
@@ -585,10 +590,22 @@ export default function CreateEditQuiz() {
       )}
 
       <section style={{ ...panelStyle, display: "grid", gap: 14 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 170px 170px 170px", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 220px 150px 150px 150px", gap: 12 }}>
           <label style={labelStyle}>
-            Название квиза
-            <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Например: Основы Python" />
+            Название
+            <input
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder={kind === "trivia" ? "Например: Кино и музыка 2000-х" : "Например: Математика 5 класс"}
+            />
+          </label>
+
+          <label style={labelStyle}>
+            Формат
+            <select value={kind} onChange={(event) => setKind(event.target.value as QuizKind)}>
+              <option value="quiz">Квиз: учебный/академический</option>
+              <option value="trivia">Викторина: развлекательная</option>
+            </select>
           </label>
 
           <label style={labelStyle}>
@@ -761,11 +778,19 @@ export default function CreateEditQuiz() {
         </div>
       </section>
 
-      <div style={{ display: "grid", gridTemplateColumns: "300px minmax(0, 1fr) 300px", gap: 16, alignItems: "start" }}>
-        <aside style={{ ...panelStyle, display: "grid", gap: 12 }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(260px, 300px) minmax(0, 1fr) minmax(260px, 300px)",
+          gap: 16,
+          alignItems: "start",
+          minWidth: 0,
+        }}
+      >
+        <aside style={{ ...panelStyle, display: "grid", gap: 12, minWidth: 0, overflow: "hidden" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
             <div>
-              <h3 style={{ margin: 0, fontSize: 18 }}>Вопросы квиза</h3>
+              <h3 style={{ margin: 0, fontSize: 18 }}>Вопросы</h3>
               <p style={helpTextStyle}>
                 {questions.length} шт. · {totalPoints} балл(ов) · {getDifficultyLabel(difficulty)}
               </p>
@@ -786,6 +811,9 @@ export default function CreateEditQuiz() {
                   type="button"
                   onClick={() => setSelectedQuestionId(question.clientId)}
                   style={{
+                    width: "100%",
+                    minWidth: 0,
+                    overflow: "hidden",
                     background: active ? "#E0F2FE" : "white",
                     color: "#0F172A",
                     border: active ? "1px solid #06B6D4" : "1px solid #E6EEF6",
@@ -806,7 +834,7 @@ export default function CreateEditQuiz() {
           </div>
         </aside>
 
-        <section style={{ ...panelStyle, minHeight: 360 }}>
+        <section style={{ ...panelStyle, minHeight: 360, minWidth: 0 }}>
           {!selectedQuestion ? (
             <p style={{ color: "#64748B" }}>Выбери вопрос слева или добавь новый.</p>
           ) : (
@@ -1017,7 +1045,7 @@ export default function CreateEditQuiz() {
         <aside style={{ ...panelStyle, display: "grid", gap: 12 }}>
           <div>
             <h3 style={{ margin: 0, fontSize: 18 }}>Банк вопросов</h3>
-            <p style={helpTextStyle}>Можно добавить вопрос из личного банка в текущий квиз.</p>
+            <p style={helpTextStyle}>Можно добавить вопрос из общего банка в текущий материал.</p>
           </div>
           <input value={bankSearch} onChange={(event) => { setBankSearch(event.target.value); setBankPage(1); }} placeholder="Поиск по вопросам" />
           <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
@@ -1049,7 +1077,7 @@ export default function CreateEditQuiz() {
                   {question.topic_name || "Без темы"} · {getQuestionTypeLabel(question.type)} · {question.points} балл(ов)
                 </div>
                 <button type="button" onClick={() => addBankQuestion(question)} style={{ background: "#2563EB", color: "white" }}>
-                  Добавить в квиз
+                  Добавить
                 </button>
               </div>
             ))}

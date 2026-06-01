@@ -30,6 +30,10 @@ class QuestionTopic(models.Model):
 
 
 class Quiz(models.Model):
+    class Kind(models.TextChoices):
+        QUIZ = "quiz", "Quiz"
+        TRIVIA = "trivia", "Trivia"
+
     class Visibility(models.TextChoices):
         PUBLIC = "public", "Public"
         PRIVATE = "private", "Private"
@@ -55,6 +59,14 @@ class Quiz(models.Model):
 
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
+
+    kind = models.CharField(
+        max_length=12,
+        choices=Kind.choices,
+        default=Kind.QUIZ,
+        db_index=True,
+        help_text="quiz means academic quiz; trivia means entertainment quiz",
+    )
 
     author = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -106,6 +118,12 @@ class Quiz(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["kind", "publish_status", "visibility"]),
+            models.Index(fields=["difficulty", "created_at"]),
+        ]
 
     def __str__(self) -> str:
         return self.title

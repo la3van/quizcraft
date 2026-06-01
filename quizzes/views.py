@@ -1,5 +1,7 @@
 import csv
 import io
+import re
+from difflib import SequenceMatcher
 from collections import OrderedDict, defaultdict
 from datetime import date, timedelta
 
@@ -14,6 +16,7 @@ from django.middleware.csrf import get_token
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework import generics, permissions, status
 from rest_framework.decorators import api_view, permission_classes
@@ -40,12 +43,57 @@ from .serializers import (
     QuizDetailSerializer,
     QuizEditSerializer,
     QuizListSerializer,
+    calculate_answer_score_for_question,
+    finalize_expired_attempt,
+    finalize_expired_attempts,
     grade_choice_answer,
     grade_number_answer,
     grade_text_answer,
 )
 
 User = get_user_model()
+
+
+def normalize_search_text(value: str | None) -> str:
+    return re.sub(r"\s+", " ", (value or "").strip().lower())
+
+
+def fuzzy_text_match(search: str, *values: str | None) -> bool:
+    clean_search = normalize_search_text(search)
+    if not clean_search:
+        return True
+
+    haystack = normalize_search_text(" ".join(value or "" for value in values))
+    if not haystack:
+        return False
+
+    if clean_search in haystack:
+        return True
+
+    tokens = [token for token in re.split(r"[^0-9a-zа-яё]+", clean_search) if len(token) >= 2]
+    if tokens and all(token in haystack for token in tokens):
+        return True
+
+    haystack_words = [word for word in re.split(r"[^0-9a-zа-яё]+", haystack) if len(word) >= 3]
+    return any(SequenceMatcher(None, token, word).ratio() >= 0.78 for token in tokens for word in haystack_words)
+
+
+def apply_fuzzy_filter(qs, search: str, *field_names: str):
+    clean_search = (search or "").strip()
+    if not clean_search:
+        return qs
+
+    db_query = Q()
+    for field_name in field_names:
+        db_query |= Q(**{f"{field_name}__icontains": clean_search})
+
+    db_ids = set(qs.filter(db_query).values_list("id", flat=True))
+    fuzzy_ids = {
+        item.id
+        for item in qs
+        if fuzzy_text_match(clean_search, *(str(getattr(item, field_name, "") or "") for field_name in field_names if "__" not in field_name))
+    }
+    return qs.filter(id__in=db_ids | fuzzy_ids)
 
 
 class QuizReadOrAuthorWritePermission(permissions.BasePermission):
@@ -55,8 +103,10 @@ class QuizReadOrAuthorWritePermission(permissions.BasePermission):
         return request.user.is_authenticated and obj.author_id == request.user.id
 
 
-class IsBankQuestionOwner(permissions.BasePermission):
+class IsBankQuestionReadOrOwnerWrite(permissions.BasePermission):
     def has_object_permission(self, request, view, obj):
+        if request.method in permissions.SAFE_METHODS:
+            return request.user.is_authenticated
         return request.user.is_authenticated and obj.author_id == request.user.id
 
 
@@ -73,11 +123,26 @@ class QuizListCreateView(ListCreateAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        scope = self.request.query_params.get("scope", "public")
-        owner = self.request.query_params.get("owner")
-        search = (self.request.query_params.get("search") or "").strip()
+        params = self.request.query_params
+        scope = params.get("scope", "public")
+        owner = params.get("owner")
+        search = (params.get("search") or params.get("q") or "").strip()
+        kind = params.get("kind") or Quiz.Kind.QUIZ
+        publish_status = params.get("publish_status") or params.get("status")
+        visibility = params.get("visibility")
+        difficulty = params.get("difficulty")
+        delivery_mode = params.get("delivery_mode")
 
         qs = Quiz.objects.select_related("author").prefetch_related("questions").all()
+
+        if user.is_authenticated:
+            expired_attempts = Attempt.objects.filter(user=user, is_submitted=False)
+            if kind in Quiz.Kind.values:
+                expired_attempts = expired_attempts.filter(quiz__kind=kind)
+            finalize_expired_attempts(expired_attempts)
+
+        if kind in Quiz.Kind.values:
+            qs = qs.filter(kind=kind)
 
         if scope == "mine" or owner == "me":
             if not user.is_authenticated:
@@ -95,9 +160,16 @@ class QuizListCreateView(ListCreateAPIView):
         else:
             qs = qs.filter(publish_status=Quiz.PublishStatus.PUBLISHED, visibility=Quiz.Visibility.PUBLIC)
 
-        if search:
-            qs = qs.filter(Q(title__icontains=search) | Q(description__icontains=search))
+        if publish_status in Quiz.PublishStatus.values:
+            qs = qs.filter(publish_status=publish_status)
+        if visibility in Quiz.Visibility.values:
+            qs = qs.filter(visibility=visibility)
+        if difficulty in Quiz.Difficulty.values:
+            qs = qs.filter(difficulty=difficulty)
+        if delivery_mode in Quiz.DeliveryMode.values:
+            qs = qs.filter(delivery_mode=delivery_mode)
 
+        qs = apply_fuzzy_filter(qs, search, "title", "description")
         return qs.order_by("-created_at")
 
     def get_serializer_class(self):
@@ -194,8 +266,72 @@ class AttemptCreateView(generics.CreateAPIView):
 class AttemptListCreateView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated]
 
+    @staticmethod
+    def parse_percent(value, default):
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
+    def attempt_percent(attempt):
+        max_score = float(sum(question.points for question in attempt.quiz.questions.all()))
+        if max_score <= 0:
+            return 0
+        return round((attempt.score / max_score) * 100, 1)
+
     def get_queryset(self):
-        return Attempt.objects.filter(user=self.request.user).select_related("quiz").prefetch_related("quiz__questions").order_by("-id")
+        params = self.request.query_params
+        queryset = Attempt.objects.filter(user=self.request.user).select_related("quiz").prefetch_related("quiz__questions")
+        finalize_expired_attempts(queryset)
+        queryset = Attempt.objects.filter(user=self.request.user).select_related("quiz").prefetch_related("quiz__questions")
+        kind = params.get("kind")
+        search = (params.get("search") or params.get("q") or "").strip()
+        date_from = parse_date(params.get("date_from") or "")
+        date_to = parse_date(params.get("date_to") or "")
+        attempt_status = params.get("status")
+        min_percent = self.parse_percent(params.get("min_percent"), 0)
+        max_percent = self.parse_percent(params.get("max_percent"), 100)
+        has_percent_filter = min_percent > 0 or max_percent < 100
+
+        if kind in [Quiz.Kind.QUIZ, Quiz.Kind.TRIVIA]:
+            queryset = queryset.filter(quiz__kind=kind)
+
+        if attempt_status == "submitted":
+            queryset = queryset.filter(is_submitted=True)
+        elif attempt_status == "in_progress":
+            queryset = queryset.filter(is_submitted=False)
+
+        if search:
+            db_query = Q(quiz__title__icontains=search) | Q(quiz__description__icontains=search)
+            db_ids = set(queryset.filter(db_query).values_list("id", flat=True))
+            fuzzy_ids = {
+                attempt.id
+                for attempt in queryset
+                if fuzzy_text_match(search, attempt.quiz.title, attempt.quiz.description)
+            }
+            queryset = queryset.filter(id__in=db_ids | fuzzy_ids)
+
+        if date_from:
+            queryset = queryset.filter(
+                Q(finished_at__date__gte=date_from) | Q(finished_at__isnull=True, started_at__date__gte=date_from)
+            )
+
+        if date_to:
+            queryset = queryset.filter(
+                Q(finished_at__date__lte=date_to) | Q(finished_at__isnull=True, started_at__date__lte=date_to)
+            )
+
+        queryset = queryset.order_by("-id")
+
+        if not has_percent_filter:
+            return queryset
+
+        return [
+            attempt
+            for attempt in queryset
+            if min_percent <= self.attempt_percent(attempt) <= max_percent
+        ]
 
     def get_serializer_class(self):
         if self.request.method == "GET":
@@ -214,26 +350,21 @@ class AttemptDetailView(generics.RetrieveAPIView):
             .prefetch_related("quiz__questions", "answers__question__options", "answers__selected_options")
         )
 
+    def get_object(self):
+        attempt = super().get_object()
+        if not attempt.is_submitted:
+            attempt = finalize_expired_attempt(attempt)
+            if attempt.is_submitted:
+                attempt = self.get_queryset().get(pk=attempt.pk)
+        return attempt
+
 
 class AttemptSubmitView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     @staticmethod
     def calculate_answer_score(question, selected_options, text_answer=None, number_answer=None):
-        if question.type in [Question.QuestionType.CHOICE_SINGLE, Question.QuestionType.CHOICE_MULTI, Question.QuestionType.TRUE_FALSE]:
-            selected_ids = set(selected_options.values_list("id", flat=True))
-            _, earned, _ = grade_choice_answer(question, selected_ids)
-            return earned
-
-        if question.type == Question.QuestionType.INPUT_TEXT:
-            _, earned = grade_text_answer(question, text_answer)
-            return earned
-
-        if question.type == Question.QuestionType.INPUT_NUMBER:
-            _, earned = grade_number_answer(question, number_answer)
-            return earned
-
-        return 0.0
+        return calculate_answer_score_for_question(question, selected_options, text_answer, number_answer)
 
     def post(self, request, pk: int):
         try:
@@ -309,7 +440,7 @@ class QuestionTopicListCreateView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return QuestionTopic.objects.filter(author=self.request.user).order_by("name")
+        return QuestionTopic.objects.all().order_by("name", "id")
 
     def perform_create(self, serializer):
         serializer.save(author=self.request.user)
@@ -328,22 +459,60 @@ class BankQuestionListCreateView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        qs = Question.objects.filter(author=self.request.user, quiz__isnull=True).select_related("topic").prefetch_related("options")
-        topic_id = self.request.query_params.get("topic")
-        search = (self.request.query_params.get("search") or "").strip()
+        params = self.request.query_params
+        qs = Question.objects.filter(quiz__isnull=True).select_related("topic", "author").prefetch_related("options")
+        topic_id = params.get("topic")
+        search = (params.get("search") or params.get("q") or "").strip()
+        question_type = params.get("type")
+        media_kind = params.get("media_kind")
+        has_media = params.get("has_media")
+        owner = params.get("owner")
+
+        if owner == "me":
+            qs = qs.filter(author=self.request.user)
         if topic_id:
             qs = qs.filter(topic_id=topic_id)
+        if question_type in Question.QuestionType.values:
+            qs = qs.filter(type=question_type)
+        if media_kind in Question.MediaKind.values:
+            qs = qs.filter(media_kind=media_kind)
+        if has_media == "yes":
+            qs = qs.exclude(media_kind=Question.MediaKind.NONE)
+        elif has_media == "no":
+            qs = qs.filter(media_kind=Question.MediaKind.NONE)
+
         if search:
-            qs = qs.filter(text__icontains=search)
+            db_query = (
+                Q(text__icontains=search)
+                | Q(explanation__icontains=search)
+                | Q(tags__icontains=search)
+                | Q(learning_goal__icontains=search)
+                | Q(topic__name__icontains=search)
+            )
+            db_ids = set(qs.filter(db_query).values_list("id", flat=True))
+            fuzzy_ids = {
+                question.id
+                for question in qs
+                if fuzzy_text_match(
+                    search,
+                    question.text,
+                    question.explanation,
+                    question.tags,
+                    question.learning_goal,
+                    question.topic.name if question.topic else "",
+                )
+            }
+            qs = qs.filter(id__in=db_ids | fuzzy_ids)
+
         return qs.order_by("-created_at", "-id")
 
 
 class BankQuestionDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = BankQuestionSerializer
-    permission_classes = [IsAuthenticated, IsBankQuestionOwner]
+    permission_classes = [IsAuthenticated, IsBankQuestionReadOrOwnerWrite]
 
     def get_queryset(self):
-        return Question.objects.filter(author=self.request.user, quiz__isnull=True).select_related("topic").prefetch_related("options")
+        return Question.objects.filter(quiz__isnull=True).select_related("topic", "author").prefetch_related("options")
 
 
 
@@ -390,7 +559,7 @@ class BankQuestionExportView(APIView):
             "options",
             "correct_options",
         ])
-        qs = Question.objects.filter(author=request.user, quiz__isnull=True).select_related("topic").prefetch_related("options")
+        qs = Question.objects.filter(quiz__isnull=True).select_related("topic", "author").prefetch_related("options")
         for question in qs.order_by("-created_at", "-id"):
             options = list(question.options.all())
             writer.writerow([
@@ -533,7 +702,13 @@ class QuizAnalyticsView(APIView):
             })
 
         return Response({
-            "quiz": {"id": quiz.id, "title": quiz.title, "max_score": max_score},
+            "quiz": {
+                "id": quiz.id,
+                "title": quiz.title,
+                "kind": quiz.kind,
+                "kind_label": quiz.get_kind_display(),
+                "max_score": max_score,
+            },
             "summary": {
                 "attempts_count": attempts.count(),
                 "average_percent": round(sum(percents) / len(percents), 1) if percents else 0,
